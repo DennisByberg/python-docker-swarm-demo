@@ -1,24 +1,29 @@
-output "manager_ip" {
-  description = "Public IP address of the manager node"
+output "manager_public_ip" {
+  description = "Public IP of the Swarm manager"
   value       = aws_instance.manager.public_ip
 }
 
-output "worker_ips" {
-  description = "Public IP addresses of worker nodes"
+output "worker_public_ips" {
+  description = "Public IPs of worker nodes"
   value       = aws_instance.workers[*].public_ip
 }
 
-output "manager_private_ip" {
-  description = "Private IP address of the manager node"
-  value       = aws_instance.manager.private_ip
+output "ssh_command_manager" {
+  description = "SSH command to connect to manager"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.manager.public_ip}"
 }
 
-output "worker_private_ips" {
-  description = "Private IP addresses of worker nodes"
-  value       = aws_instance.workers[*].private_ip
+output "visualizer_url" {
+  description = "URL to Docker Swarm Visualizer"
+  value       = "http://${aws_instance.manager.public_ip}:8080"
 }
 
-output "security_group_id" {
-  description = "ID of the Docker Swarm security group"
-  value       = aws_security_group.docker_swarm.id
+output "web_service_url" {
+  description = "URL to web service (nginx)"
+  value       = "http://${aws_instance.manager.public_ip}"
+}
+
+output "docker_node_ls_command" {
+  description = "Command to check swarm nodes"
+  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.manager.public_ip} 'docker node ls'"
 }

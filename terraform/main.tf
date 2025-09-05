@@ -90,6 +90,14 @@ resource "aws_security_group" "docker_swarm" {
     self      = true
   }
 
+  # FastAPI app port
+  ingress {
+    from_port   = 8001
+    to_port     = 8001
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -115,12 +123,73 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
+# IAM Role för ECR access
+resource "aws_iam_role" "docker_swarm_role" {
+  name = "docker-swarm-ecr-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+}
+
+resource "aws_iam_role_policy" "docker_swarm_ecr_policy" {
+  name = "docker-swarm-ecr-policy"
+  role = aws_iam_role.docker_swarm_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "ecr:GetAuthorizationToken",
+          "ecr:BatchCheckLayerAvailability",
+          "ecr:GetDownloadUrlForLayer",
+          "ecr:BatchGetImage"
+        ]
+        Resource = "*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "ssm:PutParameter",
+          "ssm:GetParameter",
+          "ssm:DeleteParameter"
+        ]
+        Resource = "arn:aws:ssm:*:*:parameter/docker-swarm/*"
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "sts:GetCallerIdentity"
+        ]
+        Resource = "*"
+      }
+    ]
+  })
+}
+
+resource "aws_iam_instance_profile" "docker_swarm_profile" {
+  name = "docker-swarm-profile"
+  role = aws_iam_role.docker_swarm_role.name
+}
+
 # EC2 Instances
 resource "aws_instance" "manager" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = aws_key_pair.docker_swarm_key.key_name
   vpc_security_group_ids = [aws_security_group.docker_swarm.id]
+  iam_instance_profile   = aws_iam_instance_profile.docker_swarm_profile.name
   user_data              = file("../scripts/manager-init.sh")
 
   tags = {
@@ -135,9 +204,11 @@ resource "aws_instance" "workers" {
   key_name               = aws_key_pair.docker_swarm_key.key_name
   vpc_security_group_ids = [aws_security_group.docker_swarm.id]
   depends_on             = [aws_instance.manager]
+  iam_instance_profile   = aws_iam_instance_profile.docker_swarm_profile.name
 
   user_data = templatefile("../scripts/worker-init.sh", {
     manager_private_ip = aws_instance.manager.private_ip
+    aws_region         = var.aws_region
   })
 
   tags = {

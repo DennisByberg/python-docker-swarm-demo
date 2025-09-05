@@ -1,24 +1,28 @@
 #!/bin/bash
 
-# Install and start Docker
+set -e
+
+# Update system and install Docker (using DNF)
 dnf update -y
-dnf install -y docker
-systemctl enable --now docker
-usermod -aG docker ec2-user
+dnf install -y docker jq
 
-# Wait for Docker to be ready
-sleep 30
+# Start Docker service
+systemctl start docker
+systemctl enable docker
 
-# Get join token from manager and join swarm
-for i in {1..30}; do
-  if token=$(curl -s http://${manager_private_ip}:8000/worker-token 2>/dev/null); then
-    if [ ! -z "$token" ] && [ "$token" != "404: Not Found" ]; then
-      docker swarm join --token $token ${manager_private_ip}:2377
-      exit 0
-    fi
-  fi
-  sleep 10
-done
+# Add ec2-user to docker group
+usermod -a -G docker ec2-user
 
-# If we get here, joining failed
-exit 1
+# Wait for manager to be ready and get join token
+sleep 90
+WORKER_TOKEN=$(aws ssm get-parameter --name "/docker-swarm/worker-token" --region ${aws_region} --query 'Parameter.Value' --output text)
+
+# Join the swarm
+docker swarm join --token $WORKER_TOKEN ${manager_private_ip}:2377
+
+# Login to ECR automatically
+AWS_REGION=${aws_region}
+ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $${ACCOUNT_ID}.dkr.ecr.$${AWS_REGION}.amazonaws.com
+
+echo "Worker node setup completed"

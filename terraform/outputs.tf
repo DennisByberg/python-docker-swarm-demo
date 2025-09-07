@@ -10,7 +10,7 @@ output "worker_public_ips" {
 
 output "ssh_command_manager" {
   description = "SSH command to connect to manager"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.manager.public_ip}"
+  value       = "ssh -i ~/.ssh/docker-swarm-key.pem ec2-user@${aws_instance.manager.public_ip}"
 }
 
 output "visualizer_url" {
@@ -25,5 +25,10 @@ output "web_service_url" {
 
 output "docker_node_ls_command" {
   description = "Command to check swarm nodes"
-  value       = "ssh -i ~/.ssh/${var.key_name}.pem ec2-user@${aws_instance.manager.public_ip} 'docker node ls'"
+  value       = "ssh -i ~/.ssh/docker-swarm-key.pem ec2-user@${aws_instance.manager.public_ip} 'docker node ls'"
+}
+
+output "fastapi_url" {
+  description = "URL to FastAPI application"
+  value       = "http://${aws_instance.manager.public_ip}:8001"
 }

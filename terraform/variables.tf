@@ -10,11 +10,6 @@ variable "instance_type" {
   default     = "t3.micro"
 }
 
-variable "key_name" {
-  description = "AWS Key Pair name"
-  type        = string
-}
-
 variable "worker_count" {
   description = "Number of worker nodes"
   type        = number

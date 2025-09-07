@@ -91,6 +91,7 @@ resource "aws_security_group" "docker_swarm" {
   }
 
   # FastAPI app port
+  # This is needed if you want to access the app directly on the nodes
   ingress {
     from_port   = 8001
     to_port     = 8001
@@ -123,7 +124,11 @@ resource "local_file" "private_key" {
   file_permission = "0400"
 }
 
-# IAM Role för ECR access
+# IAM Role and Instance Profile
+# -------------------------------
+# Creates an identity that EC2 instances can "assume" to get AWS permissions
+# assume_role_policy: Says that only the EC2 service can use this role
+# This is the foundation for giving our Docker Swarm nodes access to AWS services
 resource "aws_iam_role" "docker_swarm_role" {
   name = "docker-swarm-ecr-role"
 
@@ -141,6 +146,12 @@ resource "aws_iam_role" "docker_swarm_role" {
   })
 }
 
+# IAM Policy
+# -----------
+# Defines which AWS services our EC2 instances are allowed to use
+# ECR: Pull Docker images from AWS Container Registry
+# SSM: Store/retrieve Docker Swarm join-tokens securely between nodes
+# STS: Get AWS account-ID to build ECR repository URLs
 resource "aws_iam_role_policy" "docker_swarm_ecr_policy" {
   name = "docker-swarm-ecr-policy"
   role = aws_iam_role.docker_swarm_role.id
@@ -178,12 +189,18 @@ resource "aws_iam_role_policy" "docker_swarm_ecr_policy" {
   })
 }
 
+# Instance Profile
+# ----------------
+# Makes it possible for EC2 instances to use the IAM role
+# EC2 instances cannot directly use IAM roles, they need an Instance Profile as a "wrapper"
+# This gives our Docker Swarm nodes access to ECR and SSM via temporary credentials
+# Used to pull Docker images from ECR and store/retrieve tokens in SSM Parameter Store
 resource "aws_iam_instance_profile" "docker_swarm_profile" {
   name = "docker-swarm-profile"
   role = aws_iam_role.docker_swarm_role.name
 }
 
-# EC2 Instances
+# EC2 Manager Instance
 resource "aws_instance" "manager" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
@@ -197,6 +214,7 @@ resource "aws_instance" "manager" {
   }
 }
 
+# EC2 Worker Instances
 resource "aws_instance" "workers" {
   count                  = var.worker_count
   ami                    = var.ami_id

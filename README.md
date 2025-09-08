@@ -1,16 +1,18 @@
-# Docker Swarm on AWS - FastAPI Upload Demo
+# Docker Swarm on AWS - FastAPI Upload Demo with Load Balancer & Auto Scaling
 
-🐳 **Automatiserad Docker Swarm-kluster med FastAPI på AWS**
+🐳 **Production-ready Docker Swarm-kluster med FastAPI, Application Load Balancer och Auto Scaling på AWS**
 
-Ett komplett projekt som visar hur man skapar ett 3-nods Docker Swarm-kluster på AWS med Infrastructure as Code (IaC) och deployer en FastAPI-applikation med image upload-funktionalitet.
+Ett komplett projekt som visar hur man skapar ett skalbart Docker Swarm-kluster på AWS med Infrastructure as Code (IaC), Load Balancing, Auto Scaling och deployer en FastAPI-applikation med image upload-funktionalitet.
 
 ## 🎯 Vad gör detta projekt?
 
-- **Skapar automatiskt** en 3-nods Docker Swarm-kluster på AWS
-- **Använder Terraform** för infrastruktur som kod
+- **Skapar automatiskt** en skalbar Docker Swarm-kluster på AWS (1 manager + 2-6 workers)
+- **Application Load Balancer** för high availability och load distribution
+- **Auto Scaling Group** som automatiskt justerar worker-noder baserat på CPU-belastning
+- **CloudWatch monitoring** med automatiska scaling policies
+- **Använder Terraform** för infrastructure as code
 - **Deployer FastAPI-app** med image upload till ECR
-- **Automatisk versionshantering** av container images
-- **Komplett CI/CD pipeline** med build, push och deploy
+- **Production-ready setup** med health checks och redundans
 
 ## 🚀 Snabbstart
 
@@ -26,10 +28,11 @@ Ett komplett projekt som visar hur man skapar ett 3-nods Docker Swarm-kluster p�
 git clone <detta-repo>
 cd python-docker-swarm-demo
 
-# Terraform konfigureras automatiskt med SSH-nycklar
+# Konfigurera region och instance-typer (valfritt)
+# Redigera terraform/terraform.tfvars
 ```
 
-### 2. En-kommando deployment (rekommenderat)
+### 2. En-kommando deployment
 
 ```bash
 cd scripts
@@ -38,51 +41,30 @@ cd scripts
 
 Detta kommer att:
 
-1. Skapa infrastruktur med Terraform
-2. Vänta på Docker Swarm-initialisering
-3. Skapa ECR repository
-4. Bygga och pusha FastAPI-appen
-5. Deploya till swarm-klustret
-6. Verifiera deployment
+1. 🏗️ Skapa komplett infrastruktur med Terraform (ALB + ASG + CloudWatch)
+2. ⏳ Vänta på Docker Swarm-initialisering
+3. 📦 Skapa ECR repository
+4. 🔨 Bygga och pusha FastAPI-appen
+5. 🚀 Deploya till swarm-klustret med load balancer
+6. ✅ Verifiera deployment och health checks
 
-⏱️ **Total tid: ~5-7 minuter**
+⏱️ **Total tid: ~7-10 minuter**
 
 ### 3. Testa din deployment
 
-Dina tjänster kommer att vara tillgängliga på:
+Dina tjänster kommer att vara tillgängliga via **Load Balancer**:
 
-- **🚀 FastAPI Upload Demo**: `http://<manager-ip>:8001`
-- **📊 Docker Visualizer**: `http://<manager-ip>:8080`
-- **🌐 Nginx**: `http://<manager-ip>:80`
+- **🚀 FastAPI Upload Demo**: `http://<alb-dns>:8001`
+- **📊 Docker Visualizer**: `http://<alb-dns>:8080`
+- **🌐 Nginx**: `http://<alb-dns>`
 
 ```bash
-# Hämta manager IP
+# Hämta Load Balancer URL från output
 cd terraform
-terraform output manager_public_ip
-
-# SSH till manager för debugging
-ssh -i ~/.ssh/docker-swarm-key.pem ec2-user@<manager-ip>
-
-# Kolla kluster-status
-docker node ls
-docker service ls
+terraform output load_balancer_dns
 ```
 
-### 4. Utvecklingsworkflow
-
-När du gör kodändringar i [`app/`](app/):
-
-```bash
-cd scripts
-
-# Auto-increment version och deploya
-./deploy-to-swarm.sh
-
-# Eller med custom version
-IMAGE_TAG=v5 ./deploy-to-swarm.sh
-```
-
-### 5. Komplett cleanup
+### 4. Komplett cleanup
 
 ```bash
 cd scripts
@@ -97,30 +79,21 @@ Detta tar bort ALLT: infrastruktur, ECR repository, SSH-nycklar.
 
 - **📁 Upload Interface**: Modern HTML-formulär för image uploads
 - **🔗 REST API**: `/upload` endpoint för filhantering
-- **❤️ Health Check**: `/health` endpoint för Docker Swarm
-- **🐳 Multi-arch**: Stöd för AMD64 och ARM64
+- **❤️ Health Check**: `/health` endpoint för Load Balancer health checks
+- **🐳 Containerized**: Multi-stage Docker build
 
 ### Infrastructure (Terraform)
 
-- **🔐 Security Groups**: Docker Swarm + FastAPI-portar
-- **⚡ EC2 Instances**: 3x t3.micro (1 manager + 2 workers)
+- **🌐 Application Load Balancer**: Traffic distribution med health checks
+- **📈 Auto Scaling Group**: 2-6 worker-noder baserat på CPU-belastning
+- **📊 CloudWatch**: Metrics, alarms och auto scaling policies
+- **🔐 Security Groups**: Optimerade för ALB + Docker Swarm
+- **⚡ EC2 Instances**: 1x manager (fast) + 2-6x workers (skalbar)
 - **🔑 SSH Keys**: Automatiskt genererade och konfigurerade
-- **🏷️ IAM Roles**: ECR-behörigheter för alla noder
-- **🌐 Networking**: Optimerat för container communication
-
-### Automation Scripts
-
-- [`scripts/first-time-deploy.sh`](scripts/first-time-deploy.sh) - Komplett setup från scratch
-- [`scripts/deploy-to-swarm.sh`](scripts/deploy-to-swarm.sh) - Deploy code changes
-- [`scripts/build-push-fastapi.sh`](scripts/build-push-fastapi.sh) - Build och push till ECR
-- [`scripts/cleanup-all.sh`](scripts/cleanup-all.sh) - Komplett borttagning
-- [`scripts/utils.sh`](scripts/utils.sh) - Gemensamma utilities
 
 ### Container Registry
 
 - **🏗️ AWS ECR**: Privat repository för container images
-- **📈 Versionshantering**: Automatisk v1, v2, v3... tagging
-- **🔄 Multi-arch Images**: AMD64 och ARM64 support
 - **🔐 Säker Access**: IAM-baserad autentisering
 
 ## 💡 Utvecklingsguide
@@ -133,49 +106,46 @@ pip install -r requirements.txt
 uvicorn main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-### Felsökning
+### Monitoring & Felsökning
 
 ```bash
 # SSH till manager
-ssh -i ~/.ssh/docker-swarm-key.pem ec2-user@<manager-ip>
-
-# Service logs
-docker service logs fastapi-demo_fastapi-app
+cd terraform
+ssh -i ~/.ssh/docker-swarm-key.pem ec2-user@$(terraform output -raw manager_public_ip)
 
 # Service status
-docker service ps fastapi-demo_fastapi-app
+docker service ls
+docker service ps myapp_fastapi-app
 
 # Node status
 docker node ls
 ```
 
-### Versionshantering
+## ⚙️ Konfiguration
 
-Deployment-scriptet hanterar versioner automatiskt:
+Anpassa deployment via [`terraform/terraform.tfvars`](terraform/terraform.tfvars):
 
-- **Första deploy**: `v1`
-- **Påföljande deploys**: Auto-increment till `v2`, `v3`, osv.
-- **Custom versions**: `IMAGE_TAG=custom ./deploy-to-swarm.sh`
-- **Development**: `IMAGE_TAG=dev-$(date +%s) ./deploy-to-swarm.sh`
+```hcl
+aws_region    = "eu-north-1"
+instance_type = "t3.micro"
+worker_count  = 2      # Initial workers
+min_workers   = 2      # Minimum workers
+max_workers   = 6      # Maximum workers
+```
 
-## 💰 Kostnad
+Anpassa scripts via variables i [`scripts/first-time-deploy.sh`](scripts/first-time-deploy.sh):
 
-- **EC2 Instances**: 3x t3.micro ≈ $0.10/timme
-- **ECR Storage**: ~$0.10/månad per GB
-- **Data Transfer**: Minimal för demo
-- **Total demo-kostnad**: ~$0.50 för 3 timmars testning
-
-⚠️ **Glöm inte** att köra `./cleanup-all.sh` när du är klar!
+```bash
+AWS_REGION="eu-north-1"
+REPO_NAME="fastapi-upload-demo"
+IMAGE_TAG="v1"
+STACK_NAME="myapp"
+```
 
 ## 🔧 Teknisk stack
 
-- **Infrastructure**: Terraform + AWS (EC2, ECR, IAM)
-- **Orchestration**: Docker Swarm
-- **Application**: FastAPI + Python 3.11
+- **Infrastructure**: Terraform, AWS (EC2, ALB, ASG, CloudWatch, ECR)
+- **Container Orchestration**: Docker Swarm
+- **Application**: FastAPI, Python 3.11
 - **Frontend**: HTML5 + CSS3
-- **CI/CD**: Shell scripts + AWS CLI
-- **Monitoring**: Docker Visualizer
-
-## 📄 Licens
-
-MIT License - Se [`LICENSE`](LICENSE) för detaljer.
+- **Automation**: Bash scripts med spinner UX

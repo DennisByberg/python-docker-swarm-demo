@@ -26,6 +26,14 @@ data "aws_vpc" "default" {
   default = true
 }
 
+# Data source to get subnets in the default VPC
+data "aws_subnets" "default" {
+  filter {
+    name   = "vpc-id"
+    values = [data.aws_vpc.default.id]
+  }
+}
+
 # Security Group
 resource "aws_security_group" "docker_swarm" {
   name_prefix = "docker-swarm-"
@@ -214,22 +222,281 @@ resource "aws_instance" "manager" {
   }
 }
 
-# EC2 Worker Instances
-resource "aws_instance" "workers" {
-  count                  = var.worker_count
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
-  key_name               = aws_key_pair.docker_swarm_key.key_name
-  vpc_security_group_ids = [aws_security_group.docker_swarm.id]
-  depends_on             = [aws_instance.manager]
-  iam_instance_profile   = aws_iam_instance_profile.docker_swarm_profile.name
+# Application Load Balancer
+resource "aws_lb" "docker_swarm_alb" {
+  name               = "docker-swarm-alb"
+  internal           = false
+  load_balancer_type = "application"
+  security_groups    = [aws_security_group.alb_sg.id]
+  subnets            = data.aws_subnets.default.ids
 
-  user_data = templatefile("../scripts/worker-init.sh", {
-    manager_private_ip = aws_instance.manager.private_ip
-    aws_region         = var.aws_region
-  })
+  enable_deletion_protection = false
+}
+
+# ALB Security Group
+resource "aws_security_group" "alb_sg" {
+  name_prefix = "docker-swarm-alb-"
+  description = "Security group for Docker Swarm ALB"
+
+  ingress {
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+    from_port   = 8080
+    to_port     = 8080
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  # Lägg till denna för FastAPI
+  ingress {
+    from_port   = 8001
+    to_port     = 8001
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# Target Group for FastAPI app
+resource "aws_lb_target_group" "fastapi" {
+  name     = "docker-swarm-fastapi"
+  port     = 8001
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/health"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
 
   tags = {
-    Name = "swarm-worker-${count.index + 1}"
+    Name = "docker-swarm-fastapi"
+  }
+}
+
+# Target Group for Visualizer
+resource "aws_lb_target_group" "visualizer" {
+  name     = "docker-swarm-visualizer"
+  port     = 8080
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name = "docker-swarm-visualizer"
+  }
+}
+
+# Target Group for Nginx
+resource "aws_lb_target_group" "nginx" {
+  name     = "docker-swarm-nginx"
+  port     = 80
+  protocol = "HTTP"
+  vpc_id   = data.aws_vpc.default.id
+
+  health_check {
+    enabled             = true
+    healthy_threshold   = 2
+    interval            = 30
+    matcher             = "200"
+    path                = "/"
+    port                = "traffic-port"
+    protocol            = "HTTP"
+    timeout             = 5
+    unhealthy_threshold = 2
+  }
+
+  tags = {
+    Name = "docker-swarm-nginx"
+  }
+}
+
+# ALB Listener for HTTP
+resource "aws_lb_listener" "http" {
+  load_balancer_arn = aws_lb.docker_swarm_alb.arn
+  port              = "80"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.nginx.arn
+  }
+}
+
+# ALB Listener for Visualizer
+resource "aws_lb_listener" "visualizer" {
+  load_balancer_arn = aws_lb.docker_swarm_alb.arn
+  port              = "8080"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.visualizer.arn
+  }
+}
+
+# ALB Listener for FastAPI
+resource "aws_lb_listener" "fastapi" {
+  load_balancer_arn = aws_lb.docker_swarm_alb.arn
+  port              = "8001"
+  protocol          = "HTTP"
+
+  default_action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.fastapi.arn
+  }
+}
+
+# Target Group Attachments for Manager
+resource "aws_lb_target_group_attachment" "manager_nginx" {
+  target_group_arn = aws_lb_target_group.nginx.arn
+  target_id        = aws_instance.manager.id
+  port             = 80
+}
+
+resource "aws_lb_target_group_attachment" "manager_visualizer" {
+  target_group_arn = aws_lb_target_group.visualizer.arn
+  target_id        = aws_instance.manager.id
+  port             = 8080
+}
+
+resource "aws_lb_target_group_attachment" "manager_fastapi" {
+  target_group_arn = aws_lb_target_group.fastapi.arn
+  target_id        = aws_instance.manager.id
+  port             = 8001
+}
+
+# Auto Scaling Group för workers
+resource "aws_launch_template" "worker_template" {
+  name_prefix   = "docker-swarm-worker-"
+  image_id      = var.ami_id
+  instance_type = var.instance_type
+  key_name      = aws_key_pair.docker_swarm_key.key_name
+
+  vpc_security_group_ids = [aws_security_group.docker_swarm.id]
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.docker_swarm_profile.name
+  }
+
+  user_data = base64encode(templatefile("../scripts/worker-init-asg.sh", {
+    manager_private_ip = aws_instance.manager.private_ip
+    aws_region         = var.aws_region
+  }))
+
+  tag_specifications {
+    resource_type = "instance"
+    tags = {
+      Name = "swarm-worker-asg"
+    }
+  }
+}
+
+resource "aws_autoscaling_group" "worker_asg" {
+  name                = "docker-swarm-workers"
+  vpc_zone_identifier = data.aws_subnets.default.ids
+
+  target_group_arns = [
+    aws_lb_target_group.nginx.arn,
+    aws_lb_target_group.fastapi.arn
+  ]
+
+  health_check_type         = "ELB"
+  health_check_grace_period = 300
+
+  min_size         = var.min_workers
+  max_size         = var.max_workers
+  desired_capacity = var.worker_count
+
+  launch_template {
+    id      = aws_launch_template.worker_template.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = "Name"
+    value               = "swarm-worker-asg"
+    propagate_at_launch = true
+  }
+}
+
+# Auto Scaling Policies
+resource "aws_autoscaling_policy" "scale_up" {
+  name                   = "docker-swarm-scale-up"
+  scaling_adjustment     = 1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.worker_asg.name
+}
+
+resource "aws_autoscaling_policy" "scale_down" {
+  name                   = "docker-swarm-scale-down"
+  scaling_adjustment     = -1
+  adjustment_type        = "ChangeInCapacity"
+  cooldown               = 300
+  autoscaling_group_name = aws_autoscaling_group.worker_asg.name
+}
+
+# CloudWatch Alarms
+resource "aws_cloudwatch_metric_alarm" "cpu_high" {
+  alarm_name          = "docker-swarm-cpu-high"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "50"
+  alarm_description   = "This metric monitors ec2 cpu utilization"
+  alarm_actions       = [aws_autoscaling_policy.scale_up.arn]
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.worker_asg.name
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "cpu_low" {
+  alarm_name          = "docker-swarm-cpu-low"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = "2"
+  metric_name         = "CPUUtilization"
+  namespace           = "AWS/EC2"
+  period              = "120"
+  statistic           = "Average"
+  threshold           = "20"
+  alarm_description   = "This metric monitors ec2 cpu utilization"
+  alarm_actions       = [aws_autoscaling_policy.scale_down.arn]
+
+  dimensions = {
+    AutoScalingGroupName = aws_autoscaling_group.worker_asg.name
   }
 }

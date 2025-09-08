@@ -11,7 +11,7 @@ variable "instance_type" {
 }
 
 variable "worker_count" {
-  description = "Number of worker nodes"
+  description = "Initial number of worker nodes"
   type        = number
   default     = 2
 }
@@ -20,4 +20,16 @@ variable "ami_id" {
   description = "AMI ID for EC2 instances"
   type        = string
   default     = "ami-0c4fc5dcabc9df21d" # Amazon Linux 2 in eu-north-1
+}
+
+variable "min_workers" {
+  description = "Minimum number of workers in Auto Scaling Group"
+  type        = number
+  default     = 2
+}
+
+variable "max_workers" {
+  description = "Maximum number of workers in Auto Scaling Group"
+  type        = number
+  default     = 6
 }

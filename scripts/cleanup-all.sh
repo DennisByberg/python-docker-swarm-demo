@@ -62,7 +62,7 @@ spinner $! "Cleaning up ECR repository..."
         --region ${AWS_REGION} >/dev/null 2>&1 || true
 ) &
 spinner $! "Cleaning up SSM parameters..."
-l
+
 # Clean up SSH key
 rm -f ~/.ssh/docker-swarm-key.pem 2>/dev/null || true
 

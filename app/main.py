@@ -142,15 +142,22 @@ async def upload_file(
 
     aws_status = get_aws_status()
 
+    # Handle image upload and determine image_url
     if aws_status["s3_available"]:
         file_key = f"images/{post_id}.jpg"
         upload_success = upload_image_s3(file_content, file_key)
-        if not upload_success:
+        if upload_success:
+            image_url = (
+                f"https://{S3_BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{file_key}"
+            )
+        else:
             LOCAL_IMAGES[post_id] = file_content
+            image_url = f"/image/{post_id}"
     else:
         LOCAL_IMAGES[post_id] = file_content
+        image_url = f"/image/{post_id}"
 
-    post_data = {"id": post_id, "title": title, "note": note}
+    post_data = {"id": post_id, "title": title, "note": note, "image_url": image_url}
 
     if aws_status["dynamodb_available"]:
         save_success = save_post_aws(post_data)

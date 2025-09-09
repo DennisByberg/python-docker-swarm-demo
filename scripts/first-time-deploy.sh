@@ -19,6 +19,8 @@ cd ../terraform
 MANAGER_IP=$(terraform output -raw manager_public_ip)
 ALB_DNS=$(terraform output -raw load_balancer_dns)
 ASG_NAME=$(terraform output -raw autoscaling_group_name)
+S3_BUCKET_NAME=$(terraform output -raw s3_bucket_name)
+DYNAMODB_TABLE_NAME=$(terraform output -raw dynamodb_table_name)
 
 # Wait for Docker Swarm to initialize
 (sleep 120) &
@@ -118,6 +120,9 @@ spinner $! "Deploying basic stack to Docker Swarm..."
             --publish 8001:8000 \
             --network ${STACK_NAME}_app-network \
             --with-registry-auth \
+            --env AWS_REGION=${AWS_REGION} \
+            --env S3_BUCKET_NAME=${S3_BUCKET_NAME} \
+            --env DYNAMODB_TABLE_NAME=${DYNAMODB_TABLE_NAME} \
             ${IMAGE_URI} >/dev/null 2>&1
         
         for i in {1..60}; do

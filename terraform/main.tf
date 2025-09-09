@@ -500,3 +500,102 @@ resource "aws_cloudwatch_metric_alarm" "cpu_low" {
     AutoScalingGroupName = aws_autoscaling_group.worker_asg.name
   }
 }
+
+# S3 Bucket för image storage
+resource "aws_s3_bucket" "image_uploads" {
+  bucket = "fastapi-upload-demo-${random_string.bucket_suffix.result}"
+}
+
+resource "random_string" "bucket_suffix" {
+  length  = 8
+  special = false
+  upper   = false
+}
+
+resource "aws_s3_bucket_versioning" "image_uploads" {
+  bucket = aws_s3_bucket.image_uploads.id
+  versioning_configuration {
+    status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "image_uploads" {
+  bucket = aws_s3_bucket.image_uploads.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "image_uploads" {
+  bucket = aws_s3_bucket.image_uploads.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+# DynamoDB Table för posts
+resource "aws_dynamodb_table" "posts" {
+  name         = "fastapi-upload-posts"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "id"
+
+  attribute {
+    name = "id"
+    type = "S"
+  }
+
+  tags = {
+    Name        = "FastAPI Upload Posts"
+    Environment = "demo"
+  }
+}
+
+# IAM Policy för S3 och DynamoDB access
+resource "aws_iam_policy" "s3_dynamodb_access" {
+  name        = "S3DynamoDBAccess"
+  description = "IAM policy for S3 and DynamoDB access"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:HeadBucket"
+        ]
+        Resource = [
+          "${aws_s3_bucket.image_uploads.arn}",
+          "${aws_s3_bucket.image_uploads.arn}/*"
+        ]
+      },
+      {
+        Effect = "Allow"
+        Action = [
+          "dynamodb:GetItem",
+          "dynamodb:PutItem",
+          "dynamodb:Query",
+          "dynamodb:Scan",
+          "dynamodb:UpdateItem",
+          "dynamodb:DeleteItem",
+          "dynamodb:DescribeTable"
+        ]
+        Resource = aws_dynamodb_table.posts.arn
+      }
+    ]
+  })
+}
+
+# Attach policy to existing role
+resource "aws_iam_role_policy_attachment" "s3_dynamodb_policy" {
+  role       = aws_iam_role.docker_swarm_role.name
+  policy_arn = aws_iam_policy.s3_dynamodb_access.arn
+}

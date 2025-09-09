@@ -10,6 +10,41 @@
     <div class="container">
       <h1>python-docker-swarm-demo</h1>
 
+      <!-- AWS Status Information -->
+      <div class="aws-status">
+        <h3>Service Status</h3>
+        <div style="display: flex; gap: 10px; flex-wrap: wrap; flex-direction: column">
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span
+              class="status-indicator {% if aws_status.s3_available %}aws{% else %}local{% endif %}"
+            ></span>
+            <strong>S3:</strong> {{ aws_status.s3_bucket }}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span
+              class="status-indicator {% if aws_status.dynamodb_available %}aws{% else %}local{% endif %}"
+            ></span>
+            <strong>DB:</strong> {{ aws_status.dynamodb_table }}
+          </div>
+          <div style="display: flex; align-items: center; gap: 8px">
+            <span
+              class="status-indicator {% if aws_status.visualizer_available %}aws{% else %}local{% endif %}"
+            ></span>
+            <strong>Visualizer:</strong>
+            {% if aws_status.visualizer_available %}
+            <a
+              href="javascript:void(0)"
+              onclick="openVisualizer()"
+              style="color: #4caf50; text-decoration: none"
+            >
+              {{ aws_status.visualizer_url }}
+            </a>
+            {% else %} {{ aws_status.visualizer_url }} {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Upload Form -->
       <div class="upload-form">
         <form id="form">
           <div class="form-group">
@@ -31,6 +66,7 @@
         </form>
       </div>
 
+      <!-- Gallery -->
       <div class="gallery">
         {% for upload in uploads %}
         <div class="card">
@@ -49,5 +85,12 @@
     </div>
 
     <script src="/static/script.js"></script>
+    <script>
+      function openVisualizer() {
+        const currentUrl = window.location;
+        const visualizerUrl = `${currentUrl.protocol}//${currentUrl.hostname}:8080`;
+        window.open(visualizerUrl, '_blank');
+      }
+    </script>
   </body>
 </html>

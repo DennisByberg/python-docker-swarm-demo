@@ -1,7 +1,5 @@
 import os
 import uuid
-import json
-from typing import List, Optional
 from fastapi import FastAPI, File, UploadFile, Form, Request
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -16,20 +14,19 @@ app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
-# AWS Configuration - hämtas från environment variables
+# AWS Configuration - get this from env
 AWS_REGION = os.getenv("AWS_REGION", "eu-north-1")
 S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
 DYNAMODB_TABLE_NAME = os.getenv("DYNAMODB_TABLE_NAME")
 
-# Lokal storage (när AWS inte är tillgängligt)
+# Local Storage when AWS is not available
 LOCAL_STORAGE = {}
 LOCAL_IMAGES = {}
 
 
+# Check if AWS services are available and return their status
 def get_aws_status():
-    """Kontrollera om AWS-tjänster är tillgängliga"""
     try:
-        # Test S3 access
         s3_client = boto3.client("s3", region_name=AWS_REGION)
         if S3_BUCKET_NAME:
             s3_client.head_bucket(Bucket=S3_BUCKET_NAME)
@@ -37,7 +34,6 @@ def get_aws_status():
         else:
             s3_available = False
 
-        # Test DynamoDB access
         dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
         if DYNAMODB_TABLE_NAME:
             table = dynamodb.Table(DYNAMODB_TABLE_NAME)
@@ -46,7 +42,6 @@ def get_aws_status():
         else:
             dynamodb_available = False
 
-        # Visualizer är tillgänglig om vi har AWS-tjänster
         visualizer_available = s3_available or dynamodb_available
 
         return {
@@ -70,8 +65,8 @@ def get_aws_status():
         }
 
 
+# Save post data to DynamoDB table
 def save_post_aws(post_data):
-    """Spara post till DynamoDB"""
     try:
         dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
         table = dynamodb.Table(DYNAMODB_TABLE_NAME)
@@ -82,8 +77,8 @@ def save_post_aws(post_data):
         return False
 
 
+# Retrieve all posts from DynamoDB table
 def get_posts_aws():
-    """Hämta posts från DynamoDB"""
     try:
         dynamodb = boto3.resource("dynamodb", region_name=AWS_REGION)
         table = dynamodb.Table(DYNAMODB_TABLE_NAME)
@@ -94,8 +89,8 @@ def get_posts_aws():
         return []
 
 
+# Upload image file to S3 bucket
 def upload_image_s3(file_content, file_key):
-    """Ladda upp bild till S3"""
     try:
         s3_client = boto3.client("s3", region_name=AWS_REGION)
         s3_client.put_object(
@@ -110,8 +105,8 @@ def upload_image_s3(file_content, file_key):
         return False
 
 
+# Retrieve image file from S3 bucket
 def get_image_s3(file_key):
-    """Hämta bild från S3"""
     try:
         s3_client = boto3.client("s3", region_name=AWS_REGION)
         response = s3_client.get_object(Bucket=S3_BUCKET_NAME, Key=file_key)
@@ -121,11 +116,11 @@ def get_image_s3(file_key):
         return None
 
 
+# Display the main upload page with posts and AWS service status
 @app.get("/", response_class=HTMLResponse)
 async def read_root(request: Request):
     aws_status = get_aws_status()
 
-    # Hämta posts baserat på tillgänglighet
     if aws_status["dynamodb_available"]:
         uploads = get_posts_aws()
     else:
@@ -137,55 +132,47 @@ async def read_root(request: Request):
     )
 
 
+# Handle file upload and save to S3/DynamoDB or local storage as fallback
 @app.post("/upload")
 async def upload_file(
     title: str = Form(...), note: str = Form(...), file: UploadFile = File(...)
 ):
-    # Generera UUID för posten
     post_id = str(uuid.uuid4())
     file_content = await file.read()
 
     aws_status = get_aws_status()
 
-    # Spara bild
     if aws_status["s3_available"]:
         file_key = f"images/{post_id}.jpg"
         upload_success = upload_image_s3(file_content, file_key)
         if not upload_success:
-            # Fallback till lokalt
             LOCAL_IMAGES[post_id] = file_content
     else:
-        # Spara lokalt
         LOCAL_IMAGES[post_id] = file_content
 
-    # Spara post data
     post_data = {"id": post_id, "title": title, "note": note}
 
     if aws_status["dynamodb_available"]:
         save_success = save_post_aws(post_data)
         if not save_success:
-            # Fallback till lokalt
             LOCAL_STORAGE[post_id] = post_data
     else:
-        # Spara lokalt
         LOCAL_STORAGE[post_id] = post_data
 
     return {"message": "Upload successful", "id": post_id}
 
 
+# Retrieve and serve image by ID from S3 or local storage
 @app.get("/image/{image_id}")
 async def get_image(image_id: str):
     aws_status = get_aws_status()
 
-    # Hämta bild
     if aws_status["s3_available"]:
         file_key = f"images/{image_id}.jpg"
         image_data = get_image_s3(file_key)
         if image_data is None:
-            # Fallback till lokalt
             image_data = LOCAL_IMAGES.get(image_id)
     else:
-        # Hämta lokalt
         image_data = LOCAL_IMAGES.get(image_id)
 
     if image_data:
@@ -194,6 +181,7 @@ async def get_image(image_id: str):
         return {"error": "Image not found"}, 404
 
 
+# Return application health status and AWS service availability
 @app.get("/health")
 async def health_check():
     aws_status = get_aws_status()

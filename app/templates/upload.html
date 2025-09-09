@@ -3,94 +3,51 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>FastAPI Upload</title>
-    <style>
-      * {
-        margin: 0;
-        padding: 0;
-        box-sizing: border-box;
-      }
-
-      body {
-        font-family: Arial, sans-serif;
-        background: #1a1a1a;
-        color: #e0e0e0;
-        padding: 20px;
-      }
-
-      .container {
-        max-width: 500px;
-        margin: 0 auto;
-        background: #2d2d2d;
-        padding: 30px;
-        border-radius: 8px;
-      }
-
-      h1 {
-        text-align: center;
-        margin-bottom: 30px;
-        color: #fff;
-      }
-
-      label {
-        display: block;
-        margin-bottom: 5px;
-        color: #ccc;
-      }
-
-      input,
-      textarea {
-        width: 100%;
-        padding: 10px;
-        margin-bottom: 15px;
-        background: #3a3a3a;
-        border: 1px solid #555;
-        border-radius: 4px;
-        color: #fff;
-      }
-
-      input:focus,
-      textarea:focus {
-        outline: none;
-        border-color: #666;
-      }
-
-      input[type='file'] {
-        padding: 15px;
-        border: 2px dashed #555;
-        background: #3a3a3a;
-      }
-
-      button {
-        width: 100%;
-        padding: 12px;
-        background: #555;
-        border: none;
-        border-radius: 4px;
-        color: #fff;
-        cursor: pointer;
-      }
-
-      button:hover {
-        background: #666;
-      }
-    </style>
+    <title>python-docker-swarm-demo</title>
+    <link rel="stylesheet" href="/static/style.css" />
   </head>
   <body>
     <div class="container">
-      <h1>Upload Image 🚀</h1>
-      <form action="/upload" method="post" enctype="multipart/form-data">
-        <label>Title:</label>
-        <input type="text" name="title" required />
+      <h1>python-docker-swarm-demo</h1>
 
-        <label>Description:</label>
-        <textarea name="note" rows="3" required></textarea>
+      <div class="upload-form">
+        <form id="form">
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" name="title" required maxlength="30" />
+          </div>
 
-        <label>Image:</label>
-        <input type="file" name="file" accept="image/*" required />
+          <div class="form-group">
+            <label>Description</label>
+            <textarea name="note" rows="3" required maxlength="100"></textarea>
+          </div>
 
-        <button type="submit">Upload</button>
-      </form>
+          <div class="form-group">
+            <label>Image</label>
+            <input type="file" name="file" accept="image/*" required />
+          </div>
+
+          <button type="submit" id="btn">Upload</button>
+        </form>
+      </div>
+
+      <div class="gallery">
+        {% for upload in uploads %}
+        <div class="card">
+          <img src="/image/{{ upload.id }}" alt="{{ upload.title }}" />
+          <div class="card-content">
+            <h3>{{ upload.title }}</h3>
+            <p>{{ upload.note }}</p>
+          </div>
+        </div>
+        {% else %}
+        <div class="empty">
+          <p>No images uploaded yet</p>
+        </div>
+        {% endfor %}
+      </div>
     </div>
+
+    <script src="/static/script.js"></script>
   </body>
 </html>

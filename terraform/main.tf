@@ -21,98 +21,13 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Default VPC
-data "aws_vpc" "default" {
-  default = true
-}
+# Networking Module
+module "networking" {
+  source = "./modules/networking"
 
-# Data source to get subnets in the default VPC
-data "aws_subnets" "default" {
-  filter {
-    name   = "vpc-id"
-    values = [data.aws_vpc.default.id]
-  }
-}
-
-# Security Group
-resource "aws_security_group" "docker_swarm" {
-  name_prefix = "docker-swarm-"
-  description = "Security group for Docker Swarm"
-
-  # Essential ports only
-  ingress {
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Docker Swarm cluster communication
-  ingress {
-    from_port = 2377
-    to_port   = 2377
-    protocol  = "tcp"
-    self      = true
-  }
-
-  ingress {
-    from_port = 7946
-    to_port   = 7946
-    protocol  = "tcp"
-    self      = true
-  }
-
-  ingress {
-    from_port = 7946
-    to_port   = 7946
-    protocol  = "udp"
-    self      = true
-  }
-
-  ingress {
-    from_port = 4789
-    to_port   = 4789
-    protocol  = "udp"
-    self      = true
-  }
-
-  # Token server
-  ingress {
-    from_port = 8000
-    to_port   = 8000
-    protocol  = "tcp"
-    self      = true
-  }
-
-  # FastAPI app port
-  # This is needed if you want to access the app directly on the nodes
-  ingress {
-    from_port   = 8001
-    to_port     = 8001
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+  project_name        = "docker-swarm"
+  environment         = "demo"
+  allowed_cidr_blocks = ["0.0.0.0/0"]
 }
 
 # SSH Key
@@ -133,10 +48,6 @@ resource "local_file" "private_key" {
 }
 
 # IAM Role and Instance Profile
-# -------------------------------
-# Creates an identity that EC2 instances can "assume" to get AWS permissions
-# assume_role_policy: Says that only the EC2 service can use this role
-# This is the foundation for giving our Docker Swarm nodes access to AWS services
 resource "aws_iam_role" "docker_swarm_role" {
   name = "docker-swarm-ecr-role"
 
@@ -155,11 +66,6 @@ resource "aws_iam_role" "docker_swarm_role" {
 }
 
 # IAM Policy
-# -----------
-# Defines which AWS services our EC2 instances are allowed to use
-# ECR: Pull Docker images from AWS Container Registry
-# SSM: Store/retrieve Docker Swarm join-tokens securely between nodes
-# STS: Get AWS account-ID to build ECR repository URLs
 resource "aws_iam_role_policy" "docker_swarm_ecr_policy" {
   name = "docker-swarm-ecr-policy"
   role = aws_iam_role.docker_swarm_role.id
@@ -198,11 +104,6 @@ resource "aws_iam_role_policy" "docker_swarm_ecr_policy" {
 }
 
 # Instance Profile
-# ----------------
-# Makes it possible for EC2 instances to use the IAM role
-# EC2 instances cannot directly use IAM roles, they need an Instance Profile as a "wrapper"
-# This gives our Docker Swarm nodes access to ECR and SSM via temporary credentials
-# Used to pull Docker images from ECR and store/retrieve tokens in SSM Parameter Store
 resource "aws_iam_instance_profile" "docker_swarm_profile" {
   name = "docker-swarm-profile"
   role = aws_iam_role.docker_swarm_role.name
@@ -213,7 +114,7 @@ resource "aws_instance" "manager" {
   ami                    = var.ami_id
   instance_type          = var.instance_type
   key_name               = aws_key_pair.docker_swarm_key.key_name
-  vpc_security_group_ids = [aws_security_group.docker_swarm.id]
+  vpc_security_group_ids = [module.networking.security_group_id]
   iam_instance_profile   = aws_iam_instance_profile.docker_swarm_profile.name
   user_data              = file("../scripts/manager-init.sh")
 
@@ -222,175 +123,21 @@ resource "aws_instance" "manager" {
   }
 }
 
-# Application Load Balancer
-resource "aws_lb" "docker_swarm_alb" {
-  name               = "docker-swarm-alb"
-  internal           = false
-  load_balancer_type = "application"
-  security_groups    = [aws_security_group.alb_sg.id]
-  subnets            = data.aws_subnets.default.ids
-
-  enable_deletion_protection = false
-}
-
-# ALB Security Group
-resource "aws_security_group" "alb_sg" {
-  name_prefix = "docker-swarm-alb-"
-  description = "Security group for Docker Swarm ALB"
-
-  ingress {
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  ingress {
-    from_port   = 8080
-    to_port     = 8080
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Lägg till denna för FastAPI
-  ingress {
-    from_port   = 8001
-    to_port     = 8001
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-}
-
-# Target Group for FastAPI app
-resource "aws_lb_target_group" "fastapi" {
-  name     = "docker-swarm-fastapi"
-  port     = 8001
-  protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/health"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "docker-swarm-fastapi"
-  }
-}
-
-# Target Group for Visualizer
-resource "aws_lb_target_group" "visualizer" {
-  name     = "docker-swarm-visualizer"
-  port     = 8080
-  protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "docker-swarm-visualizer"
-  }
-}
-
-# Target Group for Nginx
-resource "aws_lb_target_group" "nginx" {
-  name     = "docker-swarm-nginx"
-  port     = 80
-  protocol = "HTTP"
-  vpc_id   = data.aws_vpc.default.id
-
-  health_check {
-    enabled             = true
-    healthy_threshold   = 2
-    interval            = 30
-    matcher             = "200"
-    path                = "/"
-    port                = "traffic-port"
-    protocol            = "HTTP"
-    timeout             = 5
-    unhealthy_threshold = 2
-  }
-
-  tags = {
-    Name = "docker-swarm-nginx"
-  }
-}
-
-# ALB Listener for HTTP
-resource "aws_lb_listener" "http" {
-  load_balancer_arn = aws_lb.docker_swarm_alb.arn
-  port              = "80"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.nginx.arn
-  }
-}
-
-# ALB Listener for Visualizer
-resource "aws_lb_listener" "visualizer" {
-  load_balancer_arn = aws_lb.docker_swarm_alb.arn
-  port              = "8080"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.visualizer.arn
-  }
-}
-
-# ALB Listener for FastAPI
-resource "aws_lb_listener" "fastapi" {
-  load_balancer_arn = aws_lb.docker_swarm_alb.arn
-  port              = "8001"
-  protocol          = "HTTP"
-
-  default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.fastapi.arn
-  }
-}
-
 # Target Group Attachments for Manager
 resource "aws_lb_target_group_attachment" "manager_nginx" {
-  target_group_arn = aws_lb_target_group.nginx.arn
+  target_group_arn = module.networking.target_group_arns.nginx
   target_id        = aws_instance.manager.id
   port             = 80
 }
 
 resource "aws_lb_target_group_attachment" "manager_visualizer" {
-  target_group_arn = aws_lb_target_group.visualizer.arn
+  target_group_arn = module.networking.target_group_arns.visualizer
   target_id        = aws_instance.manager.id
   port             = 8080
 }
 
 resource "aws_lb_target_group_attachment" "manager_fastapi" {
-  target_group_arn = aws_lb_target_group.fastapi.arn
+  target_group_arn = module.networking.target_group_arns.fastapi
   target_id        = aws_instance.manager.id
   port             = 8001
 }
@@ -402,7 +149,7 @@ resource "aws_launch_template" "worker_template" {
   instance_type = var.instance_type
   key_name      = aws_key_pair.docker_swarm_key.key_name
 
-  vpc_security_group_ids = [aws_security_group.docker_swarm.id]
+  vpc_security_group_ids = [module.networking.security_group_id]
 
   iam_instance_profile {
     name = aws_iam_instance_profile.docker_swarm_profile.name
@@ -423,11 +170,11 @@ resource "aws_launch_template" "worker_template" {
 
 resource "aws_autoscaling_group" "worker_asg" {
   name                = "docker-swarm-workers"
-  vpc_zone_identifier = data.aws_subnets.default.ids
+  vpc_zone_identifier = module.networking.subnet_ids
 
   target_group_arns = [
-    aws_lb_target_group.nginx.arn,
-    aws_lb_target_group.fastapi.arn
+    module.networking.target_group_arns.nginx,
+    module.networking.target_group_arns.fastapi
   ]
 
   health_check_type         = "ELB"

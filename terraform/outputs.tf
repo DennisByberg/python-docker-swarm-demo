@@ -10,22 +10,22 @@ output "ssh_command_manager" {
 
 output "visualizer_url" {
   description = "URL to Docker Swarm Visualizer via Load Balancer"
-  value       = "http://${aws_lb.docker_swarm_alb.dns_name}:8080"
+  value       = "http://${module.networking.alb_dns_name}:8080"
 }
 
 output "web_service_url" {
   description = "URL to web service (nginx) via Load Balancer"
-  value       = "http://${aws_lb.docker_swarm_alb.dns_name}"
+  value       = "http://${module.networking.alb_dns_name}"
 }
 
 output "fastapi_url" {
   description = "URL to FastAPI application via Load Balancer"
-  value       = "http://${aws_lb.docker_swarm_alb.dns_name}:8001"
+  value       = "http://${module.networking.alb_dns_name}:8001"
 }
 
 output "load_balancer_dns" {
   description = "DNS name of the Load Balancer"
-  value       = aws_lb.docker_swarm_alb.dns_name
+  value       = module.networking.alb_dns_name
 }
 
 output "docker_node_ls_command" {
@@ -48,11 +48,6 @@ output "autoscaling_group_info" {
   }
 }
 
-output "fastapi_target_group_arn" {
-  description = "ARN of the FastAPI target group"
-  value       = aws_lb_target_group.fastapi.arn
-}
-
 output "s3_bucket_name" {
   description = "Name of the S3 bucket for image storage"
   value       = aws_s3_bucket.image_uploads.id
@@ -61,4 +56,15 @@ output "s3_bucket_name" {
 output "dynamodb_table_name" {
   description = "Name of the DynamoDB table for posts"
   value       = aws_dynamodb_table.posts.name
+}
+
+# Networking module outputs
+output "networking" {
+  description = "Networking module outputs"
+  value = {
+    vpc_id            = module.networking.vpc_id
+    alb_dns_name      = module.networking.alb_dns_name
+    target_group_arns = module.networking.target_group_arns
+    security_group_id = module.networking.security_group_id
+  }
 }

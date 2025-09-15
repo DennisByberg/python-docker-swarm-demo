@@ -27,7 +27,7 @@ remove_docker_stack() {
     if [ -n "$manager_ip" ]; then
         ssh -o ConnectTimeout=10 -o StrictHostKeyChecking=no \
             -i "$SSH_KEY_PATH" ec2-user@"$manager_ip" \
-            "docker stack rm $STACK_NAME" 2>/dev/null || true
+            "docker stack rm $STACK_NAME" >/dev/null 2>&1 || true
         sleep 30
     fi
 }
@@ -42,17 +42,56 @@ scale_down_asg() {
             --min-size 0 \
             --max-size 0 \
             --desired-capacity 0 \
-            --region "$AWS_REGION" 2>/dev/null || true
+            --region "$AWS_REGION" >/dev/null 2>&1 || true
         sleep 60
     fi
 }
 
-# Empty S3 bucket by removing all files
-empty_s3_bucket() {
+# Completely remove S3 bucket and all contents
+cleanup_s3_bucket() {
     local bucket_name=$(get_terraform_output "s3_bucket_name")
     
     if [ -n "$bucket_name" ]; then
-        aws s3 rm "s3://$bucket_name" --recursive --region "$AWS_REGION" 2>/dev/null || true
+        # Remove all objects (including versioned objects)
+        aws s3api list-object-versions \
+            --bucket "$bucket_name" \
+            --region "$AWS_REGION" \
+            --query 'Versions[].{Key:Key,VersionId:VersionId}' \
+            --output text 2>/dev/null | while read key version_id; do
+            if [ -n "$key" ] && [ -n "$version_id" ]; then
+                aws s3api delete-object \
+                    --bucket "$bucket_name" \
+                    --key "$key" \
+                    --version-id "$version_id" \
+                    --region "$AWS_REGION" >/dev/null 2>&1 || true
+            fi
+        done
+        
+        # Remove all delete markers
+        aws s3api list-object-versions \
+            --bucket "$bucket_name" \
+            --region "$AWS_REGION" \
+            --query 'DeleteMarkers[].{Key:Key,VersionId:VersionId}' \
+            --output text 2>/dev/null | while read key version_id; do
+            if [ -n "$key" ] && [ -n "$version_id" ]; then
+                aws s3api delete-object \
+                    --bucket "$bucket_name" \
+                    --key "$key" \
+                    --version-id "$version_id" \
+                    --region "$AWS_REGION" >/dev/null 2>&1 || true
+            fi
+        done
+        
+        # Remove all current objects (in case versioning is disabled)
+        aws s3 rm "s3://$bucket_name" --recursive --region "$AWS_REGION" >/dev/null 2>&1 || true
+        
+        # Wait for eventual consistency
+        sleep 5
+        
+        # Delete the bucket itself
+        aws s3api delete-bucket \
+            --bucket "$bucket_name" \
+            --region "$AWS_REGION" >/dev/null 2>&1 || true
     fi
 }
 
@@ -67,23 +106,30 @@ cleanup_ecr() {
     aws ecr delete-repository \
         --repository-name "$REPO_NAME" \
         --region "$AWS_REGION" \
-        --force 2>/dev/null || true
+        --force >/dev/null 2>&1 || true
 }
 
 # Remove SSH private key file
 cleanup_ssh_keys() {
-    rm -f ~/.ssh/docker-swarm-key.pem 2>/dev/null || true
+    rm -f ~/.ssh/docker-swarm-key.pem >/dev/null 2>&1 || true
 }
 
-# Run all cleanup steps with spinner
-(
-    remove_docker_stack
-    scale_down_asg
-    empty_s3_bucket
-    destroy_infrastructure
-    cleanup_ecr
-    cleanup_ssh_keys
-) &
-spinner $! "Destroying AWS infrastructure and resources..."
+(remove_docker_stack) &
+spinner $! "Removing Docker stack..."
+
+(scale_down_asg) &
+spinner $! "Scaling down Auto Scaling Group..."
+
+(cleanup_s3_bucket) &
+spinner $! "Cleaning up S3 bucket..."
+
+(destroy_infrastructure) &
+spinner $! "Destroying Terraform infrastructure..."
+
+(cleanup_ecr) &
+spinner $! "Cleaning up ECR repository..."
+
+(cleanup_ssh_keys) &
+spinner $! "Removing SSH keys..."
 
 echo "🎉 Complete cleanup finished!"

@@ -7,13 +7,22 @@ spinner() {
     local delay=0.1
     local spinstr='|/-\'
     local temp
+    local color_counter=0
     
     tput civis
     
     while kill -0 $pid 2>/dev/null; do
         temp=${spinstr#?}
-        printf "\r\033[33m%c\033[0m %s" "$spinstr" "$text"
+        
+        # Cycle between colors every ~1 second
+        if [ $((color_counter % 10)) -lt 5 ]; then
+            printf "\r\033[91m%c\033[0m %s" "$spinstr" "$text"
+        else
+            printf "\r\033[95m%c\033[0m %s" "$spinstr" "$text"
+        fi
+        
         spinstr=$temp${spinstr%"$temp"}
+        color_counter=$((color_counter + 1))
         sleep $delay
     done
     

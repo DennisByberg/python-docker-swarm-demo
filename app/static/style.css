@@ -141,7 +141,7 @@ button:disabled {
 .aws-status {
   background: black;
   border-radius: 6px;
-  box-shadow: 1px 1px 1px rgba(255, 255, 0, 0.582);
+  box-shadow: 1px 1px 1px rgba(255, 255, 255, 0.5);
   padding: 20px;
   margin: 20px 0;
   color: white;

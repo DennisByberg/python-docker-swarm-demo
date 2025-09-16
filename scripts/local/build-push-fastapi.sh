@@ -7,7 +7,7 @@ source "$(dirname "$0")/utils.sh"
 AWS_REGION="eu-north-1"
 REPO_NAME="fastapi-upload-demo"
 IMAGE_TAG=${IMAGE_TAG:-"v1"}
-APP_DIR="../app"
+APP_DIR="../../app"
 
 # Get repository URI and account ID
 get_repo_uri() {

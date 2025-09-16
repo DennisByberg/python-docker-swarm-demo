@@ -62,7 +62,7 @@ echo -n "Building and pushing FastAPI (tag: $IMAGE_TAG)..."
 spinner
 
 # Get infrastructure info
-cd ../terraform
+cd ../../terraform
 MANAGER_IP=$(terraform output -raw manager_public_ip 2>/dev/null)
 if [ -z "$MANAGER_IP" ]; then
     echo "❌ Error: No manager IP found. Run terraform apply first!"
@@ -131,7 +131,7 @@ STACKEOF
 ) >/dev/null 2>&1 &
 spinner
 
-cd ../scripts
+cd ../scripts/local
 
 # Test endpoint
 echo -n "Testing FastAPI endpoint..."

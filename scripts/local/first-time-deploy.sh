@@ -11,11 +11,11 @@ STACK_NAME="myapp"
 SSH_KEY_PATH="~/.ssh/docker-swarm-key.pem"
 
 # Deploy infrastructure
-(cd ../terraform && terraform apply -auto-approve) >/dev/null 2>&1 &
+(cd ../../terraform && terraform apply -auto-approve) >/dev/null 2>&1 &
 spinner $! "Deploying infrastructure with ALB + ASG..."
 
 # Get outputs from Terraform
-cd ../terraform
+cd ../../terraform
 MANAGER_IP=$(terraform output -raw manager_public_ip)
 ALB_DNS=$(terraform output -raw load_balancer_dns)
 ASG_NAME=$(terraform output -raw autoscaling_group_name)
@@ -48,7 +48,7 @@ ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 IMAGE_URI="${ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/${REPO_NAME}:${IMAGE_TAG}"
 
 (
-    cd ../app
+    cd ../../app
     docker build -t ${REPO_NAME}:${IMAGE_TAG} -t ${IMAGE_URI} .
 ) >/dev/null 2>&1 &
 spinner $! "Building FastAPI image locally..."

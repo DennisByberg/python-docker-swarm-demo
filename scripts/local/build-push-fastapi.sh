@@ -42,5 +42,5 @@ spinner $! "Logging into ECR..."
 (build_and_push_image) >/dev/null 2>&1 &
 spinner $! "Building and pushing image..."
 
-echo "✅ Build completed!"
+echo "🎉 Build completed!"
 echo "Image: ${REPO_URI}:${IMAGE_TAG}"

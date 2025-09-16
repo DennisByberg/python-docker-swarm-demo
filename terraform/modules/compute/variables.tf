@@ -76,13 +76,13 @@ variable "aws_region" {
 variable "manager_user_data_file" {
   description = "Path to manager initialization script"
   type        = string
-  default     = "../scripts/manager-init.sh"
+  default     = "../scripts/ec2/manager-init.sh"
 }
 
 variable "worker_user_data_file" {
   description = "Path to worker initialization script"
   type        = string
-  default     = "../scripts/worker-init-asg.sh"
+  default     = "../scripts/ec2/worker-init-asg.sh"
 }
 
 variable "cpu_scale_up_threshold" {

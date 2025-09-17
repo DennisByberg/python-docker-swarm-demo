@@ -12,7 +12,7 @@ SSH_KEY_PATH="~/.ssh/docker-swarm-key.pem"
 # Get terraform output value safely, returns empty string if not found
 get_terraform_output() {
     local output_name="$1"
-    cd ../terraform
+    cd ../../terraform
     if terraform output "$output_name" >/dev/null 2>&1; then
         terraform output -raw "$output_name" 2>/dev/null || echo ""
     else
@@ -97,7 +97,7 @@ cleanup_s3_bucket() {
 
 # Destroy all Terraform-managed infrastructure
 destroy_infrastructure() {
-    cd ../terraform
+    cd ../../terraform
     terraform destroy -auto-approve >/dev/null 2>&1
 }
 
